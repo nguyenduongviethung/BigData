@@ -1,0 +1,6 @@
+ray
+requests
+dotenv
+polars
+minio
+python-chess
