@@ -20,10 +20,26 @@ BUCKET = os.getenv("BUCKET", "chess-data")
 SILVER_PATH = "silver/clean_games.parquet"
 
 @ray.remote
-def parse_pgn(raw_text, username):
+def process_object(object_name):
     try:
+        from minio import Minio
+        import os
+        import chess.pgn
         import io
-        game = chess.pgn.read_game(io.StringIO(raw_text))
+
+        minio_client = Minio(
+            "minio:9000",
+            access_key=os.getenv("MINIO_ROOT_USER"),
+            secret_key=os.getenv("MINIO_ROOT_PASSWORD"),
+            secure=False
+        )
+
+        resp = minio_client.get_object(BUCKET, object_name)
+        raw = resp.read().decode()
+
+        username = object_name.split("_")[0].split("/")[-1]
+
+        game = chess.pgn.read_game(io.StringIO(raw))
         if not game:
             return None
 
@@ -37,29 +53,27 @@ def parse_pgn(raw_text, username):
             "ply_count": len(list(game.mainline_moves())),
             "time_control": game.headers.get("TimeControl")
         }
-    except:
+
+    except Exception as e:
         return None
 
 
 def run():
-    objects = minio_client.list_objects(BUCKET, prefix=BRONZE_PREFIX, recursive=True)
+    objects = list(
+        minio_client.list_objects(BUCKET, prefix=BRONZE_PREFIX, recursive=True)
+    )
 
-    tasks = []
+    futures = [
+        process_object.remote(obj.object_name)
+        for obj in objects
+    ]
 
-    for obj in objects:
-        resp = minio_client.get_object(BUCKET, obj.object_name)
-        raw = resp.read().decode()
-
-        username = obj.object_name.split("_")[0].split("/")[-1]
-        tasks.append(parse_pgn.remote(raw, username))
-
-    results = ray.get(tasks)
-    
+    results = ray.get(futures)
     results = [r for r in results if r]
 
     df = pl.DataFrame(results)
-    buffer = io.BytesIO()
 
+    buffer = io.BytesIO()
     df.write_parquet(buffer)
     buffer.seek(0)
 

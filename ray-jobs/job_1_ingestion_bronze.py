@@ -1,20 +1,12 @@
 import os
 import io
 import requests
-import time
 from datetime import datetime
 from minio import Minio
 from dotenv import load_dotenv
 import ray
 
 load_dotenv("/home/ray/.env")
-
-minio_client = Minio(
-    "minio:9000",
-    access_key=os.getenv("MINIO_ROOT_USER"),
-    secret_key=os.getenv("MINIO_ROOT_PASSWORD"),
-    secure=False
-)
 
 BUCKET = os.getenv("BUCKET", "chess-data")
 BRONZE_PREFIX = "bronze/raw_pgn/"
@@ -32,7 +24,6 @@ def get_top_players(category="live_rapid", limit=3):
             return ["hikaru", "magnuscarlsen"]
 
         data = resp.json()
-
         players = data.get(category, [])[:limit]
         return [p["username"] for p in players]
 
@@ -40,15 +31,15 @@ def get_top_players(category="live_rapid", limit=3):
         print("❌ fallback due to error:", e)
         return ["hikaru", "magnuscarlsen"]
 
+
 def download_raw_pgn(username, year, month):
     url = f"https://api.chess.com/pub/player/{username}/games/{year}/{month:02d}/pgn"
-    HEADERS = {
-        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64)",
-        "Accept": "*/*",
-        "Connection": "keep-alive"
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "*/*"
     }
 
-    r = requests.get(url, headers=HEADERS, timeout=10)
+    r = requests.get(url, headers=headers, timeout=15)
 
     print("DOWNLOAD:", username, r.status_code, len(r.text))
 
@@ -57,7 +48,15 @@ def download_raw_pgn(username, year, month):
 
     return r.text
 
+
 def upload_to_bronze(username, pgn_text):
+    minio_client = Minio(
+        "minio:9000",
+        access_key=os.getenv("MINIO_ROOT_USER"),
+        secret_key=os.getenv("MINIO_ROOT_PASSWORD"),
+        secure=False
+    )
+
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
     path = f"{BRONZE_PREFIX}{username}_{ts}.pgn"
 
@@ -70,20 +69,44 @@ def upload_to_bronze(username, pgn_text):
 
     return path
 
+
+@ray.remote
+def process_user(username, year, month):
+    try:
+        pgn = download_raw_pgn(username, year, month)
+
+        if not pgn:
+            return f"❌ No data: {username}"
+
+        path = upload_to_bronze(username, pgn)
+
+        return f"🥉 Bronze saved: {path}"
+
+    except Exception as e:
+        return f"❌ Error {username}: {e}"
+
+
 def run():
     users = get_top_players()
     print("USERS =", users)
+
     year = datetime.now().year
     month = datetime.now().month
 
-    for u in users:
-        pgn = download_raw_pgn(u, year, month)
-        if pgn:
-            path = upload_to_bronze(u, pgn)
-            print(f"🥉 Bronze saved: {path}")
-        time.sleep(1)
+    futures = [
+        process_user.remote(u, year, month)
+        for u in users
+    ]
+
+    results = ray.get(futures)
+
+    for r in results:
+        print(r)
+
 
 if __name__ == "__main__":
     ray.init(address="ray://ray-head:10001")
+
     run()
+
     ray.shutdown()
