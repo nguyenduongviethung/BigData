@@ -4,3 +4,4 @@ dotenv
 polars
 minio
 python-chess
+deltalake
