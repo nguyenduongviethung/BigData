@@ -87,15 +87,16 @@ def process_user(username, year, month):
 
 
 def run():
-    users = get_top_players()
+    users = get_top_players(limit=20)
     print("USERS =", users)
 
     year = datetime.now().year
     month = datetime.now().month
 
     futures = [
-        process_user.remote(u, year, month)
+        process_user.remote(u, year, m)
         for u in users
+        for m in month
     ]
 
     results = ray.get(futures)
@@ -105,8 +106,15 @@ def run():
 
 
 if __name__ == "__main__":
-    ray.init(address="ray://ray-head:10001")
-
+    # Lấy đường dẫn tuyệt đối của thư mục chứa code hiện tại (thư mục ray-jobs)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Khởi tạo Ray kèm theo runtime_env để đồng bộ code sang các Worker
+    ray.init(
+        address="ray://ray-head:10001",
+        runtime_env={"working_dir": current_dir}
+    )
+    
     run()
-
+    
     ray.shutdown()
