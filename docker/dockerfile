@@ -3,14 +3,7 @@ FROM rayproject/ray:2.40.0
 USER root
 
 # Cài các thư viện cần thiết
-RUN pip install --no-cache-dir \
-    python-chess \
-    minio \
-    requests \
-    polars \
-    pyarrow \
-    wandb \
-    python-dotenv
+RUN pip install --no-cache-dir requirements.txt
 
 # Chuyển về user ray
 USER ray
