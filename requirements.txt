@@ -5,3 +5,4 @@ polars
 minio
 python-chess
 deltalake
+torch
