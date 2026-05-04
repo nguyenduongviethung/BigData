@@ -1,12 +1,20 @@
 FROM rayproject/ray:2.40.0
 
-USER root
+# Đặt thư mục làm việc 
+WORKDIR /home/ray/app
 
-# Cài các thư viện cần thiết
-RUN pip install --no-cache-dir requirements.txt
+ARG PYTORCH_URL=""
 
-# Chuyển về user ray
-USER ray
-WORKDIR /home/ray
+COPY --chown=ray:users requirements.txt .
+
+RUN pip install --upgrade pip && \
+    if [ -z "$PYTORCH_URL" ] ; then \
+      pip install --no-cache-dir -r requirements.txt ; \
+    else \
+      pip install --no-cache-dir -r requirements.txt --extra-index-url $PYTORCH_URL ; \
+    fi
+    
+# Copy toàn bộ mã nguồn dự án vào 
+COPY --chown=ray:users . .
 
 CMD ["ray", "start", "--block"]
