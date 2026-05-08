@@ -4,10 +4,9 @@ import os
 import numpy as np
 import polars as pl
 import chess.pgn
+from datetime import datetime # 🚀 Import thư viện
 from minio import Minio
 from dotenv import load_dotenv
-
-# Import hàm trích xuất Tensor từ module chúng ta vừa viết
 from utils_tensor import process_game_to_training_data
 
 load_dotenv("/home/ray/.env")
@@ -15,13 +14,10 @@ load_dotenv("/home/ray/.env")
 BUCKET = os.getenv("BUCKET", "chess-data")
 SILVER_URI = f"s3://{BUCKET}/silver/clean_games"
 GOLD_TENSOR_PREFIX = "gold/tensors/"
+CHECKPOINT_FILE = f"{GOLD_TENSOR_PREFIX}_checkpoint_time.txt" # 🚀 Đổi tên file checkpoint
 
 @ray.remote
-def process_and_save_chunk(chunk_id: int, pgn_strings: list):
-    """
-    Worker function: Xử lý một lô các ván cờ và lưu thành 1 file .npz trên MinIO.
-    """
-    # Khởi tạo MinIO client bên trong mỗi worker
+def process_and_save_chunk(batch_id: str, chunk_index: int, pgn_strings: list):
     minio_client = Minio(
         "minio:9000",
         access_key=os.getenv("MINIO_ROOT_USER"),
@@ -29,19 +25,13 @@ def process_and_save_chunk(chunk_id: int, pgn_strings: list):
         secure=False
     )
 
-    all_states = []
-    all_policies = []
-    all_values = []
+    all_states, all_policies, all_values = [], [], []
 
     for pgn_str in pgn_strings:
-        if not pgn_str:
-            continue
-            
+        if not pgn_str: continue
         game = chess.pgn.read_game(io.StringIO(pgn_str))
-        if not game:
-            continue
+        if not game: continue
         
-        # Trích xuất tensors cho từng nước đi trong ván
         samples = process_game_to_training_data(game)
         for s in samples:
             all_states.append(s["state"])
@@ -49,28 +39,34 @@ def process_and_save_chunk(chunk_id: int, pgn_strings: list):
             all_values.append(s["value"])
 
     if not all_states:
-        return f"⚠️ Chunk {chunk_id}: Không có dữ liệu hợp lệ."
+        return f"⚠️ Batch {batch_id} - Chunk {chunk_index}: Rỗng."
 
-    # Chuyển list thành ma trận NumPy để tối ưu bộ nhớ
-    X = np.array(all_states, dtype=np.int8)        # Shape: (N, 12, 8, 8)
-    Y_policy = np.array(all_policies, dtype=np.int32) # Shape: (N,)
-    Y_value = np.array(all_values, dtype=np.float32)  # Shape: (N,)
+    X = np.array(all_states, dtype=np.int8)        
+    Y_policy = np.array(all_policies, dtype=np.int32) 
+    Y_value = np.array(all_values, dtype=np.float32)  
 
-    # Nén các ma trận vào một bộ đệm (buffer)
     buffer = io.BytesIO()
     np.savez_compressed(buffer, states=X, policies=Y_policy, values=Y_value)
     buffer.seek(0)
 
-    # Đẩy thẳng file .npz lên MinIO
-    object_name = f"{GOLD_TENSOR_PREFIX}tensor_chunk_{chunk_id}.npz"
-    minio_client.put_object(
-        BUCKET,
-        object_name,
-        buffer,
-        length=buffer.getbuffer().nbytes
-    )
+    # 🚀 TÊN FILE THÔNG MINH: Kết hợp ID của mẻ chạy (Batch) và số thứ tự
+    object_name = f"{GOLD_TENSOR_PREFIX}batch_{batch_id}_chunk_{chunk_index}.npz"
+    minio_client.put_object(BUCKET, object_name, buffer, length=buffer.getbuffer().nbytes)
     
     return f"✅ Đã lưu {object_name} (Kích thước: {X.shape[0]} samples)"
+
+
+# 🚀 CÁC HÀM QUẢN LÝ CHECKPOINT (DỰA TRÊN THỜI GIAN)
+def get_last_watermark(client):
+    try:
+        resp = client.get_object(BUCKET, CHECKPOINT_FILE)
+        return resp.read().decode('utf-8')
+    except Exception:
+        return "1970-01-01T00:00:00.000000" # Mốc thời gian mặc định xa xưa
+
+def save_new_watermark(client, timestamp_str):
+    data = timestamp_str.encode('utf-8')
+    client.put_object(BUCKET, CHECKPOINT_FILE, io.BytesIO(data), len(data))
 
 
 def run():
@@ -83,42 +79,55 @@ def run():
         "AWS_S3_ALLOW_UNSAFE_RENAME": "true"
     }
     
-    print("⏳ Đang đọc dữ liệu ván cờ từ Silver Zone...")
+    minio_client = Minio(
+        "minio:9000",
+        access_key=os.getenv("MINIO_ROOT_USER"),
+        secret_key=os.getenv("MINIO_ROOT_PASSWORD"),
+        secure=False
+    )
+    
+    # 🚀 BƯỚC 1: Lấy mốc thời gian lần chạy trước
+    last_watermark = get_last_watermark(minio_client)
+    print(f"📍 High-Water Mark hiện tại: {last_watermark}")
+    
+    print("⏳ Đang quét bảng Silver...")
     df = pl.read_delta(SILVER_URI, storage_options=storage_options)
     
-    # Lấy danh sách PGN (cột mà chúng ta đã thêm ở Bước 2)
-    if "moves_string" not in df.columns:
-        raise ValueError("Không tìm thấy cột 'moves_string'. Hãy chắc chắn Job 2 đã chạy phiên bản mới nhất!")
-        
-    pgn_list = df["moves_string"].to_list()
+    # Bắt lỗi an toàn nếu Job 2 chưa kịp chạy bản mới tạo ra cột này
+    if "ingested_at" not in df.columns:
+        raise ValueError("Chưa tìm thấy cột 'ingested_at'. Bạn cần chạy Job 2 phiên bản mới trước!")
+
+    # 🚀 BƯỚC 2: Chỉ lọc những dòng sinh ra sau mốc last_watermark
+    new_df = df.filter(pl.col("ingested_at") > pl.lit(last_watermark))
     
-    # Chia nhỏ dữ liệu (Chunking) để phân tán cho các Ray worker. 
-    # Ví dụ: Mỗi chunk chứa 100 ván cờ (sẽ sinh ra khoảng 6000-8000 tensors).
+    if new_df.height == 0:
+        print("✅ Không có dữ liệu mới. Bỏ qua trích xuất Tensor.")
+        return
+        
+    print(f"📦 Phát hiện {new_df.height} ván cờ mới. Tiến hành trích xuất...")
+    
+    pgn_list = new_df["moves_string"].to_list()
     chunk_size = 100
     chunks = [pgn_list[i:i + chunk_size] for i in range(0, len(pgn_list), chunk_size)]
     
-    print(f"🚀 Phân phát {len(chunks)} chunks cho Ray Cluster xử lý...")
+    # Tạo Batch ID dựa trên thời gian thực tại để đặt tên file
+    batch_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    # Kích hoạt tính toán song song
-    futures = [process_and_save_chunk.remote(i, chunk) for i, chunk in enumerate(chunks)]
+    print(f"🚀 Phân phát {len(chunks)} chunks cho cụm Ray (Batch: {batch_id})...")
+    futures = [process_and_save_chunk.remote(batch_id, i, chunk) for i, chunk in enumerate(chunks)]
     
-    # Chờ và in kết quả
     results = ray.get(futures)
     for r in results:
         print(r)
         
-    print("🥇 Hoàn tất sinh dữ liệu Tensor cho AI!")
+    # 🚀 BƯỚC 3: Cập nhật Checkpoint bằng thời gian lớn nhất (mới nhất) trong mẻ dữ liệu vừa xử lý
+    max_timestamp_in_batch = new_df["ingested_at"].max()
+    save_new_watermark(minio_client, max_timestamp_in_batch)
+    print(f"🥇 Hoàn tất! Đã kéo High-Water Mark lên: {max_timestamp_in_batch}")
+
 
 if __name__ == "__main__":
-    # Lấy đường dẫn tuyệt đối của thư mục chứa code hiện tại (thư mục ray-jobs)
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Khởi tạo Ray kèm theo runtime_env để đồng bộ code sang các Worker
-    ray.init(
-        address="ray://ray-head:10001",
-        runtime_env={"working_dir": current_dir}
-    )
-    
+    ray.init(address="ray://ray-head:10001", runtime_env={"working_dir": current_dir})
     run()
-    
     ray.shutdown()
