@@ -1,0 +1,20 @@
+# Bỏ qua dữ liệu cục bộ
+minio-data/
+mlruns/
+*.pgn
+*.npz
+**/*.pyc
+
+# Bỏ qua các file môi trường ảo và bộ nhớ đệm
+.venv/
+venv/
+__pycache__/
+*.pyc
+**/__pycache__/
+
+# Bỏ qua file chứa mật khẩu
+.env
+
+# Bỏ qua các file Git
+.git/
+.gitignore
