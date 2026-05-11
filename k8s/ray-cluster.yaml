@@ -1,0 +1,112 @@
+# 1. CỔNG MẠNG CHO RAY HEAD (Service)
+apiVersion: v1
+kind: Service
+metadata:
+  name: ray-head
+spec:
+  type: LoadBalancer
+  ports:
+  - name: client
+    port: 10001
+    targetPort: 10001
+  - name: dashboard
+    port: 8265
+    targetPort: 8265
+  - name: redis # Dành riêng cho Worker gọi nội bộ, không ra ngoài
+    port: 6379
+    targetPort: 6379
+  selector:
+    app: ray-head
+
+---
+# 2. KHỐI QUẢN LÝ (Ray Head Deployment)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ray-head
+spec:
+  replicas: 1 # Chỉ luôn có đúng 1 Head
+  selector:
+    matchLabels:
+      app: ray-head
+  template:
+    metadata:
+      labels:
+        app: ray-head
+    spec:
+      containers:
+      - name: ray-head
+        image: alphazero-registry:5000/alphazero-node:v1
+        resources:
+          requests:
+            cpu: "1"
+            memory: "1.5Gi" # K8s phải đảm bảo cấp đủ 2GB
+          limits:
+            cpu: "2"
+            memory: "2Gi" # K8s sẽ chém Pod nếu ăn quá 3GB
+        
+        # Thêm ổ đĩa RAM chia sẻ
+        volumeMounts:
+        - mountPath: /dev/shm
+          name: dshm
+
+        imagePullPolicy: IfNotPresent # Quan trọng: Báo K8s lấy image local thay vì tải trên mạng
+        command: ["ray", "start", "--head", "--dashboard-host=0.0.0.0", "--port=6379", "--block"]
+        ports:
+        - containerPort: 6379
+        - containerPort: 8265
+        - containerPort: 10001
+        envFrom:
+        - secretRef:
+            name: alphazero-secrets # Lấy toàn bộ biến môi trường từ Két sắt bạn đã tạo
+      
+      # Khai báo ổ đĩa ở cấp độ Pod
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+
+---
+# 3. KHỐI CÔNG NHÂN (Ray Worker Deployment)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ray-worker
+spec:
+  replicas: 1 # Bạn có thể tăng lên 5, 10 tùy sức mạnh máy tính
+  selector:
+    matchLabels:
+      app: ray-worker
+  template:
+    metadata:
+      labels:
+        app: ray-worker
+    spec:
+      containers:
+      - name: ray-worker
+        image: alphazero-registry:5000/alphazero-node:v1
+        resources:
+          requests:
+            cpu: "1"
+            memory: "1.5Gi" # K8s phải đảm bảo cấp đủ 2GB
+          limits:
+            cpu: "2"
+            memory: "2.5Gi" # K8s sẽ chém Pod nếu ăn quá 3GB
+
+        # # Thêm ổ đĩa RAM chia sẻ
+        volumeMounts:
+        - mountPath: /dev/shm
+          name: dshm
+        
+        imagePullPolicy: IfNotPresent
+        # Worker không cần mở cổng, nó tự chủ động kết nối lên Head
+        command: ["ray", "start", "--address=ray-head:6379", "--block"]
+        envFrom:
+        - secretRef:
+            name: alphazero-secrets
+
+      # Khai báo ổ đĩa ở cấp độ Pod
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory

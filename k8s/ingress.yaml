@@ -1,0 +1,55 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: alphazero-ingress
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+  # 1. Đường dẫn cho MLflow
+  - host: mlflow.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: mlflow-service
+            port:
+              number: 5000
+
+  # 2. Đường dẫn cho Ray Dashboard
+  - host: ray.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ray-head
+            port:
+              number: 8265
+
+  # 3. Đường dẫn cho MinIO Web Console (Giao diện người dùng)
+  - host: console.minio.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: minio  # Đảm bảo tên service MinIO của bạn đúng là 'minio'
+            port:
+              number: 9001
+
+  # 4. Đường dẫn cho MinIO API (Dành cho code kết nối từ ngoài vào)
+  - host: api.minio.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: minio
+            port:
+              number: 9000
