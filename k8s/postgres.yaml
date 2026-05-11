@@ -1,0 +1,83 @@
+# --- 1. Tạo ổ cứng vĩnh cửu để lưu dữ liệu ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi # 2GB là quá dư dả để lưu thông số text của MLflow
+---
+# --- 2. Triển khai máy chủ Postgres ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:14-alpine
+        imagePullPolicy: IfNotPresent
+        env:
+        # Lấy thông tin bọc thép từ Két sắt alphazero-secrets
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: alphazero-secrets
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: alphazero-secrets
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: alphazero-secrets
+              key: POSTGRES_DB
+        # Tránh lỗi phân quyền ghi file trên ổ cứng ảo
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+          
+        ports:
+        - containerPort: 5432
+        
+        # Gắn ổ cứng vĩnh cửu vào đúng thư mục của Postgres
+        volumeMounts:
+        - mountPath: /var/lib/postgresql/data
+          name: postgres-storage
+          
+        # Bác sĩ khám sức khỏe: Chỉ báo Ready khi DB thực sự kết nối được
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+---
+# --- 3. Tạo đường dẫn nội bộ (Tổng đài DNS) ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+spec:
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432

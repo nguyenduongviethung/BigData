@@ -1,0 +1,24 @@
+# Sử dụng Base Image siêu nhẹ của Python 3.10
+FROM python:3.10-slim
+
+# Đặt thư mục làm việc mặc định trong Container
+WORKDIR /app
+
+# Nâng cấp pip để tránh lỗi khi cài đặt thư viện
+RUN pip install --upgrade pip
+
+# Copy CHÍNH XÁC file requirements của MLflow từ thư mục dự án vào
+# (Nhờ thiết kế Monorepo, Docker sẽ nhặt đúng file này)
+COPY docker/mlflow/requirements.txt .
+
+# Cài đặt các thư viện (Không lưu cache để giảm dung lượng Image)
+RUN pip install --no-cache-dir -r requirements.txt && \
+    rm -rf ~/.cache/pip && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Mở cổng 5000 để K8s có thể trỏ Traffic vào
+EXPOSE 5000
+
+# Khởi động máy chủ MLflow
+# Các tham số kết nối tới Postgres và MinIO sẽ được K8s tiêm vào sau qua file YAML
+CMD ["mlflow", "server", "--host", "0.0.0.0", "--port", "5000"]
