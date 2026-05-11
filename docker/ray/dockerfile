@@ -1,0 +1,28 @@
+# Sử dụng Base Image chính thức của Ray
+FROM rayproject/ray:2.40.0
+
+# Đặt thư mục làm việc 
+WORKDIR /home/ray/app
+
+ARG PYTORCH_URL=""
+
+# Copy file requirements trước để tận dụng cache của Docker
+COPY --chown=ray:users docker/ray/requirements.txt .
+
+# Tích hợp lệnh dọn dẹp pip cache
+RUN pip install --upgrade pip && \
+    if [ -z "$PYTORCH_URL" ] ; \
+    then \
+      pip install --no-cache-dir -r requirements.txt ; \
+    else \
+      pip install --no-cache-dir -r requirements.txt --extra-index-url $PYTORCH_URL ; \
+    fi && \
+    rm -rf ~/.cache/pip
+    
+# --- ĐÚNG 1 DÒNG NÀY ĐỂ TÓM GỌN NÃO BỘ DỰ ÁN ---
+COPY --chown=ray:users src/ ./src/
+
+# Cấu hình biến môi trường để Python tự tin tìm thấy src/
+ENV PYTHONPATH="/home/ray/app"
+
+CMD ["ray", "start", "--block"]
