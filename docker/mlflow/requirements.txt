@@ -1,0 +1,8 @@
+# Lõi MLflow Server (Nên dùng bản 2.x ổn định, tương thích ngược cực tốt)
+mlflow==2.11.3
+
+# Cầu nối giao tiếp với MinIO (giao thức S3)
+boto3==1.34.62
+
+# Cầu nối giao tiếp với PostgreSQL Database
+psycopg2-binary==2.9.9
