@@ -90,13 +90,18 @@ def run():
     users = get_top_players(limit=20)
     print("USERS =", users)
 
-    year = datetime.now().year
-    month = datetime.now().month
+    current_year = datetime.now().year
+    current_month = datetime.now().month
+
+    year = current_year
+    month = current_month -1
+    if (month == 0):
+        month = 12
+        year -= 1
 
     futures = [
-        process_user.remote(u, year, m)
+        process_user.remote(u, year, month)
         for u in users
-        for m in month
     ]
 
     results = ray.get(futures)
