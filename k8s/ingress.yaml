@@ -7,7 +7,7 @@ metadata:
 spec:
   rules:
   # 1. Đường dẫn cho MLflow
-  - host: mlflow.local
+  - host: mlflow.localhost
     http:
       paths:
       - path: /
@@ -19,7 +19,7 @@ spec:
               number: 5000
 
   # 2. Đường dẫn cho Ray Dashboard
-  - host: ray.local
+  - host: ray.localhost
     http:
       paths:
       - path: /
@@ -31,7 +31,7 @@ spec:
               number: 8265
 
   # 3. Đường dẫn cho MinIO Web Console (Giao diện người dùng)
-  - host: console.minio.local
+  - host: console.minio.localhost
     http:
       paths:
       - path: /
@@ -43,7 +43,7 @@ spec:
               number: 9001
 
   # 4. Đường dẫn cho MinIO API (Dành cho code kết nối từ ngoài vào)
-  - host: api.minio.local
+  - host: api.minio.localhost
     http:
       paths:
       - path: /
