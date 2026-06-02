@@ -1,0 +1,7 @@
+streamlit==1.50.0
+plotly==6.8.0
+pandas==2.3.3
+minio==7.2.20
+mlflow==3.1.4
+ray[client]==2.40.0
+requests

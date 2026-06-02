@@ -53,3 +53,15 @@ spec:
             name: minio
             port:
               number: 9000
+
+  # 5. Dashboard (Streamlit)
+  - host: dashboard.localhost
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: dashboard-service
+            port:
+              number: 8501
