@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dashboard
+  template:
+    metadata:
+      labels:
+        app: dashboard
+    spec:
+      containers:
+      - name: dashboard
+        image: alphazero-registry:5000/chess-dashboard:v12
+        ports:
+        - containerPort: 8501
+        env:
+        - name: MINIO_ENDPOINT
+          value: "minio:9000"
+        - name: MINIO_USER
+          valueFrom:
+            secretKeyRef:
+              name: alphazero-secrets
+              key: MINIO_ROOT_USER
+        - name: MINIO_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: alphazero-secrets
+              key: MINIO_ROOT_PASSWORD
+        - name: MLFLOW_URI
+          value: "http://mlflow-service:5000"
+        - name: RAY_ENDPOINT
+          value: "ray://ray-head:10001"
+        - name: RAY_DASHBOARD_URL
+          value: "http://ray-head:8265"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard-service
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 8501
+    targetPort: 8501
+    name: streamlit
+  selector:
+    app: dashboard
