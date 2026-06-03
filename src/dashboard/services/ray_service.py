@@ -33,6 +33,21 @@ def _get(path: str):
 
     return response.json()
 
+@st.cache_data(ttl=5)
+def ray_summary():
+
+    health = cluster_health()
+
+    resources = cluster_resources()
+
+    jobs = get_jobs()
+
+    return {
+        **health,
+        **resources,
+        "job_count": len(jobs)
+    }
+
 
 # =========================================================
 # VERSION
