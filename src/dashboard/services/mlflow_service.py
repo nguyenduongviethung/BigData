@@ -16,6 +16,47 @@ def get_mlflow():
 
     return mlflow
 
+@st.cache_data(ttl=10)
+def mlflow_health():
+
+    try:
+
+        experiments = get_experiments()
+
+        model_count = len(
+            get_registry_models()
+        )
+
+        run_count = 0
+
+        for exp in experiments:
+
+            try:
+
+                runs = mlflow.search_runs(
+                    experiment_ids=[
+                        exp.experiment_id
+                    ]
+                )
+
+                run_count += len(runs)
+
+            except Exception:
+                pass
+
+        return {
+            "healthy": True,
+            "experiments": len(experiments),
+            "runs": run_count,
+            "models": model_count
+        }
+
+    except Exception as e:
+
+        return {
+            "healthy": False,
+            "message": str(e)
+        }
 
 def get_experiments():
 

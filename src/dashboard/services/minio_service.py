@@ -22,6 +22,34 @@ def get_minio_client():
         secure=False
     )
 
+@st.cache_data(ttl=10)
+def minio_health():
+
+    try:
+
+        buckets = list_buckets()
+
+        total_objects = 0
+
+        for bucket in buckets:
+
+            total_objects += count_objects(
+                bucket.name
+            )
+
+        return {
+            "healthy": True,
+            "bucket_count": len(buckets),
+            "object_count": total_objects
+        }
+
+    except Exception as e:
+
+        return {
+            "healthy": False,
+            "message": str(e)
+        }
+
 
 def list_buckets():
 
@@ -29,7 +57,7 @@ def list_buckets():
 
     return list(client.list_buckets())
 
-
+@st.cache_data(ttl=300)
 def count_objects(bucket):
 
     client = get_minio_client()

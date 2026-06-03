@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: dashboard
-        image: alphazero-registry:5000/chess-dashboard:v12
+        image: alphazero-registry:5000/chess-dashboard:v13
         ports:
         - containerPort: 8501
         env:
