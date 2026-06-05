@@ -1,6 +1,4 @@
-from io import BytesIO
-
-import pandas as pd
+import polars as pl
 import streamlit as st
 from minio import Minio
 
@@ -71,40 +69,26 @@ def count_objects(bucket):
     )
 
 
-def load_games_df():
+@st.cache_data(ttl=60)
+def load_dataset_df():
 
-    client = get_minio_client()
+    storage_options = {
+        "AWS_ACCESS_KEY_ID": MINIO_USER,
+        "AWS_SECRET_ACCESS_KEY": MINIO_PASSWORD,
+        "AWS_ENDPOINT_URL": f"http://{MINIO_ENDPOINT}",
+        "AWS_REGION": "us-east-1",
+        "AWS_ALLOW_HTTP": "true",
+        "AWS_S3_ALLOW_UNSAFE_RENAME": "true"
+    }
 
-    dfs = []
-
-    objects = client.list_objects(
-        DATA_BUCKET,
-        prefix="games/",
-        recursive=True
+    uri = (
+        f"s3://{DATA_BUCKET}"
+        "/gold/train_features"
     )
 
-    for obj in objects:
-
-        if not obj.object_name.endswith(".parquet"):
-            continue
-
-        response = client.get_object(
-            DATA_BUCKET,
-            obj.object_name
-        )
-
-        dfs.append(
-            pd.read_parquet(
-                BytesIO(
-                    response.read()
-                )
-            )
-        )
-
-    if not dfs:
-        return pd.DataFrame()
-
-    return pd.concat(
-        dfs,
-        ignore_index=True
+    df = pl.read_delta(
+        uri,
+        storage_options=storage_options
     )
+
+    return df.to_pandas()

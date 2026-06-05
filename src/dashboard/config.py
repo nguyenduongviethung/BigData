@@ -6,12 +6,12 @@ MINIO_ENDPOINT = os.getenv(
 )
 
 MINIO_USER = os.getenv(
-    "MINIO_USER",
+    "MINIO_ROOT_USER",
     "admin"
 )
 
 MINIO_PASSWORD = os.getenv(
-    "MINIO_PASSWORD",
+    "MINIO_ROOT_PASSWORD",
     "admin123"
 )
 
@@ -31,6 +31,6 @@ RAY_DASHBOARD_URL = os.getenv(
 )
 
 DATA_BUCKET = os.getenv(
-    "DATA_BUCKET",
+    "BUCKET",
     "chess-data"
 )

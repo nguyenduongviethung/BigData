@@ -255,7 +255,7 @@ def run_distributed_training(num_workers: int, use_gpu: bool, batch_size: int, l
     return result
 
 if __name__ == "__main__":
-    # ray.init(address="auto") 
+    ray.init(address="auto") 
     
     # 1. Hỏi xem hệ thống có GPU không
     _use_gpu = torch.cuda.is_available()
@@ -276,7 +276,7 @@ if __name__ == "__main__":
     _lr = float(os.getenv("TRAIN_LR", 0.0001))
     _epochs = int(os.getenv("TRAIN_EPOCHS", 5))
     
-    ray.init(address="ray://ray-head:10001", runtime_env={"working_dir": current_dir}) # Nếu chỉ chạy docker
+    # ray.init(address="ray://ray-head:10001", runtime_env={"working_dir": current_dir}) # Nếu chỉ chạy docker
     # ray.init(address="auto")
     run_distributed_training(
         num_workers=_num_workers, use_gpu=_use_gpu, batch_size=_batch_size, lr=_lr, epochs=_epochs

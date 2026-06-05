@@ -22,7 +22,7 @@ def run_step(step_name, cmd):
 try:
     run_step("Job 1: Ingestion Bronze (API/PGN)", ["python", "job_1_ingestion_bronze.py"])
     run_step("Job 2: Silver Transform (Làm sạch)",  ["python", "job_2_silver_transform.py"])
-    # run_step("Job 3: Gold Features (Metadata)",    ["python", "job_3_gold_features.py"])
+    run_step("Job 3: Gold Features (Metadata)",    ["python", "job_3_gold_features.py"])
     run_step("Job 4: Gold Tensors (Tensor)",      ["python", "job_4_gold_tensors.py"])
     print("\nToàn bộ pipeline đã chạy thành công!")
     
