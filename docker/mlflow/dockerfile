@@ -13,8 +13,7 @@ COPY docker/mlflow/requirements.txt .
 
 # Cài đặt các thư viện (Không lưu cache để giảm dung lượng Image)
 RUN pip install --no-cache-dir -r requirements.txt && \
-    rm -rf ~/.cache/pip && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    rm -rf ~/.cache/pip
 
 # Mở cổng 5000 để K8s có thể trỏ Traffic vào
 EXPOSE 5000

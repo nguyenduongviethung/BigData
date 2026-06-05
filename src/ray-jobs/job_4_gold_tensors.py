@@ -7,7 +7,7 @@ import chess.pgn
 from datetime import datetime # 🚀 Import thư viện
 from minio import Minio
 from dotenv import load_dotenv
-from utils_tensor import process_game_to_training_data
+from utils_tensors import process_game_to_training_data
 
 load_dotenv("/home/ray/.env")
 

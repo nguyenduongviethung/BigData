@@ -2,10 +2,12 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-ENV PIP_REQUIRE_HASHES=0
+# Nâng cấp pip để tránh lỗi khi cài đặt thư viện
+RUN pip install --upgrade pip
 
 # Install dependencies
 COPY docker/dashboard/requirements.txt .
+
 RUN pip install --no-cache-dir -r requirements.txt && \
     rm -rf ~/.cache/pip
 

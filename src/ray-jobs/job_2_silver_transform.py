@@ -54,7 +54,10 @@ def process_object(object_name):
             "result": game.headers.get("Result"),
             "ply_count": len(list(game.mainline_moves())),
             "time_control": game.headers.get("TimeControl"),
-            "moves_string": moves_string
+            "moves_string": moves_string,
+            "eco": game.headers.get("ECO"),
+            "eco_url": game.headers.get("ECOUrl"),
+            "termination": game.headers.get("Termination")
         }
     except Exception as e:
         print(f"❌ Error parsing {object_name}: {e}")

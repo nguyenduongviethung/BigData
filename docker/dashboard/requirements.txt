@@ -1,7 +1,9 @@
 streamlit==1.50.0
 plotly==6.8.0
+polars==1.36.1
 pandas==2.3.3
 minio==7.2.20
 mlflow==3.1.4
 ray[client]==2.40.0
-requests
+requests==2.31.0
+deltalake==1.2.1
