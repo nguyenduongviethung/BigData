@@ -2,52 +2,38 @@ import io
 import os
 import numpy as np
 import torch
-from torch.utils.data import Dataset
+import s3fs
+from torch.utils.data import Dataset,IterableDataset
 from minio import Minio
 
 class ChessMinIODataset(Dataset):
-    def __init__(self, bucket="chess-data", prefix="gold/tensors/"):
-        # Kết nối tới MinIO
-        self.client = Minio(
-            "minio:9000",
-            access_key=os.getenv("MINIO_ROOT_USER", "minioadmin"),
-            secret_key=os.getenv("MINIO_ROOT_PASSWORD", "minioadmin"),
-            secure=False
+    def __init__(self, file_uris, endpoint_url="http://minio:9000", access_key="minioadmin", secret_key="minioadmin"):
+        self.file_uris = file_uris
+        self.s3 = s3fs.S3FileSystem(
+            key=access_key,
+            secret=secret_key,
+            client_kwargs={'endpoint_url': endpoint_url}
         )
-        self.bucket = bucket
-        self.prefix = prefix
-        self.samples = []
-        
-        print("⏳ Đang tải Tensors từ MinIO vào bộ nhớ...")
-        self._load_data()
-
-    def _load_data(self):
-        # Lấy danh sách tất cả file .npz trong Gold Zone
-        objects = self.client.list_objects(self.bucket, prefix=self.prefix, recursive=True)
-        
-        for obj in objects:
-            if obj.object_name.endswith('.npz'):
-                resp = self.client.get_object(self.bucket, obj.object_name)
-                # Đọc byte trực tiếp không cần lưu file cứng
-                file_data = io.BytesIO(resp.read())
-                data = np.load(file_data)
-                
-                # Mạng Neural (Conv2d) luôn yêu cầu input dạng Float32
-                X = torch.tensor(data['states'], dtype=torch.float32) 
-                P = torch.tensor(data['policies'], dtype=torch.long)    # Phân loại đa lớp dùng Long
-                V = torch.tensor(data['values'], dtype=torch.float32)   # Hồi quy dùng Float32
-                
-                # Đóng gói thành danh sách các mẫu
-                for i in range(len(X)):
-                    self.samples.append((X[i], P[i], V[i]))
-                    
-                resp.close()
-                resp.release_conn()
-                
-        print(f"✅ Đã nạp thành công {len(self.samples)} trạng thái cờ vua.")
 
     def __len__(self):
-        return len(self.samples)
+        return len(self.file_uris)
 
     def __getitem__(self, idx):
-        return self.samples[idx]
+        file_uri = self.file_uris[idx]
+        
+        # Mở file từ MinIO
+        with self.s3.open(file_uri, 'rb') as f:
+            # 💡 BÍ QUYẾT: Đọc toàn bộ luồng byte vào RAM trước để NumPy có thể giải nén (.npz cần tính năng seek)
+            buffer = io.BytesIO(f.read())
+            
+            # Đọc file NumPy Zip
+            data = np.load(buffer)
+            
+            # Lấy các ma trận ra và chuyển đổi (Ép kiểu) ngay lập tức sang PyTorch Tensor
+            # Lưu ý: PyTorch mạng nơ-ron thường yêu cầu đầu vào dạng float32
+            states = torch.from_numpy(data['states']).float() 
+            policies = torch.from_numpy(data['policies']).long() 
+            values = torch.from_numpy(data['values']).float()
+            
+        # Trả về một dictionary hoặc tuple tùy theo cách bạn bóc tách trong vòng lặp train
+        return states, policies, values
