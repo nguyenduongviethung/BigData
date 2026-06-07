@@ -58,8 +58,8 @@ def run():
         .alias("game_length_cat")
     ])
 
-    if "moves_string" in df.columns:
-        df = df.drop("moves_string")
+    if "full_pgn" in df.columns:
+        df = df.drop("full_pgn")
 
     print(f"💾 Đang ghi bảng Features ({df.height} dòng) vào Gold Zone...")
     

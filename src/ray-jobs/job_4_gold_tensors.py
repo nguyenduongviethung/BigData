@@ -7,7 +7,7 @@ import chess.pgn
 from datetime import datetime # 🚀 Import thư viện
 from minio import Minio
 from dotenv import load_dotenv
-from utils_tensor import process_game_to_training_data
+from utils_tensors import process_game_to_training_data
 
 load_dotenv("/home/ray/.env")
 
@@ -106,7 +106,7 @@ def run():
         
     print(f"📦 Phát hiện {new_df.height} ván cờ mới. Tiến hành trích xuất...")
     
-    pgn_list = new_df["moves_string"].to_list()
+    pgn_list = new_df["full_pgn"].to_list()
     chunk_size = 100
     chunks = [pgn_list[i:i + chunk_size] for i in range(0, len(pgn_list), chunk_size)]
     
