@@ -33,35 +33,80 @@ def process_object(object_name):
         )
 
         resp = client.get_object(BUCKET, object_name)
-        raw = resp.read().decode()
+        try:
+            raw = resp.read().decode()
+        finally:
+            resp.close()
+            resp.release_conn()
 
         username = object_name.split("_")[0].split("/")[-1]
 
-        game = chess.pgn.read_game(io.StringIO(raw))
-        if not game:
-            return None
+        pgn_io = io.StringIO(raw)
 
-        exporter = chess.pgn.StringExporter(headers=False, variations=False, comments=False)
-        moves_string = game.accept(exporter)
+        rows = []
 
-        return {
-            "source_file": object_name,
-            "username": username,
-            "white": game.headers.get("White"),
-            "black": game.headers.get("Black"),
-            "white_elo": int(game.headers.get("WhiteElo", 0) or 0),
-            "black_elo": int(game.headers.get("BlackElo", 0) or 0),
-            "result": game.headers.get("Result"),
-            "ply_count": len(list(game.mainline_moves())),
-            "time_control": game.headers.get("TimeControl"),
-            "moves_string": moves_string,
-            "eco": game.headers.get("ECO"),
-            "eco_url": game.headers.get("ECOUrl"),
-            "termination": game.headers.get("Termination")
-        }
+        while True:
+            game = chess.pgn.read_game(pgn_io)
+
+            if game is None:
+                break
+
+            exporter = chess.pgn.StringExporter(
+                headers=True,
+                variations=False,
+                comments=False
+            )
+
+            full_pgn = game.accept(exporter)
+
+            link = game.headers.get("Link", "")
+
+            if link:
+                game_id = link.rstrip("/").split("/")[-1]
+            else:
+                continue
+
+
+            game_date = (
+                game.headers.get("UTCDate")
+                or game.headers.get("Date")
+            )
+
+            if game_date:
+                game_date = game_date.replace(".", "-")
+
+            rows.append({
+                "game_id": game_id,
+                "game_date": game_date,
+
+                "source_file": object_name,
+                "username": username,
+
+                "white": game.headers.get("White"),
+                "black": game.headers.get("Black"),
+
+                "white_elo": int(game.headers.get("WhiteElo", 0) or 0),
+                "black_elo": int(game.headers.get("BlackElo", 0) or 0),
+
+                "result": game.headers.get("Result"),
+
+                "ply_count": len(list(game.mainline_moves())),
+
+                "time_control": game.headers.get("TimeControl"),
+
+                "full_pgn": full_pgn,
+
+                "eco": game.headers.get("ECO"),
+                "eco_url": game.headers.get("ECOUrl"),
+
+                "termination": game.headers.get("Termination")
+            })
+
+        return rows
+
     except Exception as e:
         print(f"❌ Error parsing {object_name}: {e}")
-        return None
+        return []
 
 def run():
     objects = list(minio_client.list_objects(BUCKET, prefix=BRONZE_PREFIX, recursive=True))
@@ -73,14 +118,31 @@ def run():
     print(f"📦 Tìm thấy {len(objects)} file PGN mới. Bắt đầu phân tán tác vụ...")
     futures = [process_object.remote(obj.object_name) for obj in objects]
 
-    results = ray.get(futures)
-    results = [r for r in results if r]
+    nested_results = ray.get(futures)
+
+    results = [
+        row
+        for file_rows in nested_results
+        for row in file_rows
+    ]
 
     if not results:
         print("⚠️ Không có kết quả hợp lệ nào được parse.")
         return
 
     df = pl.DataFrame(results)
+
+    before = df.height
+
+    df = df.unique(
+        subset=["game_id"],
+        keep="first"
+    )
+
+    print(
+        f"🧹 Dedup nội bộ batch: "
+        f"{before} -> {df.height}"
+    )
 
     # =========================================================================
     # 🚀 BƯỚC ĐỘT PHÁ: ĐÓNG DẤU THỜI GIAN (HIGH-WATER MARK)
@@ -98,19 +160,51 @@ def run():
         "AWS_S3_ALLOW_UNSAFE_RENAME": "true"
     }
 
-    print(f"Bắt đầu ghi DataFrame ({df.height} dòng) vào Delta Table...")
-    # Schema_mode="merge" sẽ tự động thêm cột `ingested_at` vào bảng cũ mà không gây lỗi
-    df.write_delta(
-        target=SILVER_URI,
-        mode="append",
-        storage_options=storage_options,
-        delta_write_options={"schema_mode": "merge"} 
-    )
+    try:
+        existing_ids = (
+            pl.read_delta(
+                SILVER_URI,
+                storage_options=storage_options,
+                columns=["game_id"]
+            )
+            .unique()
+        )
+
+        before = df.height
+
+        df = df.join(
+            existing_ids,
+            on="game_id",
+            how="anti"
+        )
+
+        print(
+            f"🔍 Dedupe với Silver: "
+            f"{before} -> {df.height}"
+        )
+
+    except Exception:
+        print("ℹ️ Silver chưa tồn tại. Khởi tạo mới.")
+
+    if df.height == 0:
+        print("✅ Không có game mới.")
+    
+    else: 
+        print(f"Bắt đầu ghi DataFrame ({df.height} dòng) vào Delta Table...")
+        # Schema_mode="merge" sẽ tự động thêm cột `ingested_at` vào bảng cũ mà không gây lỗi
+        df.write_delta(
+            target=SILVER_URI,
+            mode="append",
+            storage_options=storage_options,
+            delta_write_options={"schema_mode": "merge"} 
+        )
+
+    
 
     print(f"🧹 Bắt đầu dọn dẹp: Di chuyển {len(results)} file sang Archive...")
     success_count = 0
-    for r in results:
-        src_obj = r["source_file"]
+    for obj in objects:
+        src_obj = obj.object_name
         dest_obj = src_obj.replace(BRONZE_PREFIX, ARCHIVE_PREFIX) 
         try:
             minio_client.copy_object(BUCKET, dest_obj, CopySource(BUCKET, src_obj))
