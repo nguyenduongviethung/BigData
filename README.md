@@ -183,3 +183,302 @@ Sử dụng **Data Lakehouse với MinIO (S3-compatible) + Delta Lake**:
 - Mô hình đạt **Elo > 3500**  
 
 ---
+
+# 9. Installation & Usage
+
+## 9.1 Prerequisites
+
+Yêu cầu cài đặt trước:
+
+- Docker
+- Docker Buildx
+- kubectl
+- k3d
+- Kubernetes
+- Python 3.11+
+- Ray CLI
+
+Kiểm tra:
+
+```bash
+docker --version
+kubectl version --client
+k3d version
+ray --version
+```
+
+---
+
+## 9.2 Cluster Initialization
+
+Khởi tạo Kubernetes cluster bằng k3d và registry nội bộ:
+
+```bash
+k3d cluster create alphazero-cluster \
+    --servers 1 \
+    --agents 1 \
+    -p "80:80@loadbalancer" \
+    -p "10001:10001@loadbalancer" \
+    --registry-create alphazero-registry:5050
+```
+
+Kiểm tra cluster:
+
+```bash
+kubectl get nodes
+```
+
+---
+
+## 9.3 Build & Push Docker Images
+
+### Ray Worker Image
+
+```bash
+docker buildx build \
+    -f docker/ray/Dockerfile \
+    -t localhost:5050/alphazero-node:v1 \
+    --push .
+```
+
+### MLflow Image
+
+```bash
+docker buildx build \
+    -f docker/mlflow/Dockerfile \
+    -t localhost:5050/custom-mlflow:v1 \
+    --push .
+```
+
+### Dashboard Image
+
+```bash
+docker buildx build \
+    -f docker/dashboard/Dockerfile \
+    -t localhost:5050/chess-dashboard:v24 \
+    --push .
+```
+
+Kiểm tra image đã được đẩy lên registry:
+
+```bash
+docker image ls
+```
+
+---
+
+## 9.4 Environment Configuration
+
+Tạo file `.env` từ mẫu:
+
+```bash
+cp .env.example .env
+```
+
+Cập nhật các biến môi trường cần thiết trong file `.env`.
+
+Ví dụ:
+
+```env
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=minioadmin123
+
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=mlflow
+
+MLFLOW_S3_ENDPOINT_URL=http://minio-service:9000
+AWS_ACCESS_KEY_ID=minioadmin
+AWS_SECRET_ACCESS_KEY=minioadmin123
+```
+
+Tạo Kubernetes Secret từ file `.env`:
+
+```bash
+kubectl create secret generic alphazero-secret \
+    --from-env-file=.env
+```
+
+Kiểm tra:
+
+```bash
+kubectl get secret
+```
+
+---
+
+## 9.5 Deploy Infrastructure
+
+Triển khai các thành phần của hệ thống:
+
+### MinIO
+
+```bash
+kubectl apply -f k8s/minio.yaml
+```
+
+### Ray Cluster
+
+```bash
+kubectl apply -f k8s/ray-cluster.yaml
+```
+
+### PostgreSQL
+
+```bash
+kubectl apply -f k8s/postgres.yaml
+```
+
+### MLflow
+
+```bash
+kubectl apply -f k8s/mlflow.yaml
+```
+
+### Dashboard
+
+```bash
+kubectl apply -f k8s/dashboard.yaml
+```
+
+### Ingress
+
+```bash
+kubectl apply -f k8s/ingress.yaml
+```
+
+Triển khai toàn bộ:
+
+```bash
+kubectl apply -f k8s/
+```
+
+---
+
+## 9.6 Verify Deployment
+
+Kiểm tra pods:
+
+```bash
+kubectl get pods -A
+```
+
+Kiểm tra services:
+
+```bash
+kubectl get svc
+```
+
+Kiểm tra ingress:
+
+```bash
+kubectl get ingress
+```
+
+Kiểm tra RayCluster:
+
+```bash
+kubectl get raycluster
+```
+
+---
+
+## 9.7 Access Services
+
+### Ray Dashboard
+
+```text
+http://ray.local
+```
+
+Hoặc:
+
+```text
+http://ray.local:8265
+```
+
+### MLflow
+
+```text
+http://mlflow.local
+```
+
+### Dashboard
+
+```text
+http://dashboard.local
+```
+
+---
+
+## 9.8 Submit Ray Jobs
+
+Thực thi một file Python trong cluster:
+
+```bash
+ray job submit \
+    --address http://ray.local:8265 \
+    --working-dir ./src \
+    -- python <file_path>
+```
+
+Ví dụ:
+
+```bash
+ray job submit \
+    --address http://ray.local:8265 \
+    --working-dir ./src \
+    -- python data_processing/bronze_to_silver.py
+```
+
+### Theo dõi job
+
+Liệt kê jobs:
+
+```bash
+ray job list \
+    --address http://ray.local:8265
+```
+
+Xem logs:
+
+```bash
+ray job logs <job_id> \
+    --address http://ray.local:8265
+```
+
+---
+
+## 9.9 Training Pipeline
+
+Huấn luyện mô hình:
+
+```bash
+ray job submit \
+    --address http://ray.local:8265 \
+    --working-dir ./src \
+    -- python training/train.py
+```
+
+Các artifact và metrics sẽ được lưu vào:
+
+- MLflow Tracking Server
+- MinIO Artifact Store
+
+---
+
+## 9.10 Shutdown
+
+Xóa toàn bộ cluster:
+
+```bash
+k3d cluster delete alphazero-cluster
+```
+
+Kiểm tra:
+
+```bash
+k3d cluster list
+```
+
+---
