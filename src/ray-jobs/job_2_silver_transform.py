@@ -39,7 +39,13 @@ def process_object(object_name):
             resp.close()
             resp.release_conn()
 
-        username = object_name.split("_")[0].split("/")[-1]
+        filename = os.path.basename(object_name)
+        parts = filename.replace(".pgn", "").split("_")
+
+        year = int(parts[-3])
+        month = int(parts[-2])
+
+        username = "_".join(parts[:-3])
 
         pgn_io = io.StringIO(raw)
 
@@ -81,6 +87,9 @@ def process_object(object_name):
 
                 "source_file": object_name,
                 "username": username,
+
+                "year": year,
+                "month": month,
 
                 "white": game.headers.get("White"),
                 "black": game.headers.get("Black"),

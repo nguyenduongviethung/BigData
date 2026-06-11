@@ -36,7 +36,7 @@ spec:
     spec:
       containers:
       - name: ray-head
-        image: alphazero-registry:5000/alphazero-node:v6
+        image: alphazero-registry:5000/alphazero-node:v8
         resources:
           requests:
             cpu: "1"
@@ -84,7 +84,7 @@ spec:
     spec:
       containers:
       - name: ray-worker
-        image: alphazero-registry:5000/alphazero-node:v6
+        image: alphazero-registry:5000/alphazero-node:v8
         resources:
           requests:
             cpu: "1"

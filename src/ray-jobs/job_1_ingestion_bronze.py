@@ -5,6 +5,7 @@ from datetime import datetime
 from minio import Minio
 from dotenv import load_dotenv
 import ray
+import argparse
 
 load_dotenv("/home/ray/.env")
 
@@ -49,7 +50,7 @@ def download_raw_pgn(username, year, month):
     return r.text
 
 
-def upload_to_bronze(username, pgn_text):
+def upload_to_bronze(username, pgn_text, year, month):
     minio_client = Minio(
         "minio:9000",
         access_key=os.getenv("MINIO_ROOT_USER"),
@@ -58,7 +59,7 @@ def upload_to_bronze(username, pgn_text):
     )
 
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
-    path = f"{BRONZE_PREFIX}{username}_{ts}.pgn"
+    path = f"{BRONZE_PREFIX}{username}_{year}_{month:02d}_{ts}.pgn"
 
     minio_client.put_object(
         BUCKET,
@@ -78,7 +79,7 @@ def process_user(username, year, month):
         if not pgn:
             return f"❌ No data: {username}"
 
-        path = upload_to_bronze(username, pgn)
+        path = upload_to_bronze(username, pgn, year, month)
 
         return f"🥉 Bronze saved: {path}"
 
@@ -86,18 +87,13 @@ def process_user(username, year, month):
         return f"❌ Error {username}: {e}"
 
 
-def run():
-    users = get_top_players(limit=20)
+def run(category, year, month, limit):
+    users = get_top_players(
+        category=category,
+        limit=limit
+    )
+
     print("USERS =", users)
-
-    current_year = datetime.now().year
-    current_month = datetime.now().month
-
-    year = current_year
-    month = current_month -1
-    if (month == 0):
-        month = 12
-        year -= 1
 
     futures = [
         process_user.remote(u, year, month)
@@ -109,17 +105,54 @@ def run():
     for r in results:
         print(r)
 
+def parse_args():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--category",
+        default="live_rapid",
+        help="Chess.com leaderboard category"
+    )
+
+    parser.add_argument(
+        "--year",
+        type=int,
+        default=None
+    )
+
+    parser.add_argument(
+        "--month",
+        type=int,
+        default=None
+    )
+
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=20
+    )
+
+    return parser.parse_args()
 
 if __name__ == "__main__":
-    # Lấy đường dẫn tuyệt đối của thư mục chứa code hiện tại (thư mục ray-jobs)
+
+    args = parse_args()
+
+    year = args.year if args.year is not None else datetime.now().year
+    month = args.month if args.month is not None else datetime.now().month
+
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Khởi tạo Ray kèm theo runtime_env để đồng bộ code sang các Worker
+
     ray.init(
         address="ray://ray-head:10001",
         runtime_env={"working_dir": current_dir}
     )
-    
-    run()
-    
+
+    run(
+        category=args.category,
+        year=year,
+        month=month,
+        limit=args.limit
+    )
+
     ray.shutdown()
